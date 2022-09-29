@@ -1,0 +1,487 @@
+---
+title: "Untitled"
+output: html_document
+date: "2022-09-12"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r tareas, eval=FALSE}
+
+# extraer autmaticamente el microdato, en el chunck miscelanea se trabaja esto, pero parta de una direccion ftp con el zip que lo contiene
+
+```
+
+```{r referencias, eval=FALSE}
+
+```
+
+
+```{r libraries}
+library(MicroDatosEs)   # defunciones, encuesta de presupuestos familiares, 
+library(pxR)   # son para  json pc-axis
+library(INEbaseR) 
+library(purrr) # walk
+
+```
+
+```{r biblio,  eval=FALSE}
+
+https://ropenspain.es/paquetes/
+https://github.com/orgs/rOpenSpain/repositories
+https://rpubs.com/jaortega/EncuestaR1  # algunas rutinas, incluida la lectura de metadatos
+https://www.icane.es/c/document_library/get_file?uuid=c2e9fff1-72d5-42ad-b391-bacb3ebe9dbe&groupId=10138  # curso de regresion en R que parte de microdatos del ine
+https://rpubs.com/blad0914/746366 # introduccion a estadistica descriptiva
+https://www.rpubs.com/lihkir/838523 # visualizacion de datos
+https://www.cienciadedatos.net/documentos/31_seleccion_de_predictores_subset_selection_ridge_lasso_dimension_reduction  # Selección de predictores, regularización ridge, lasso, elastic net y reducción de dimensionalidad
+https://elartedeldato.com/blog/como-visualizar-los-datos-de-la-epa-con-r/
+  http://destio.us.es/calvo/descargas/asig/demografia/RparaDemografia.pdf # r para demografia
+
+```
+
+```{r funciones read.fwf.microdata, eval=FALSE}
+
+
+## la lectura del microdato se basa en la funcion read.fwf.microdata
+  
+
+
+
+read.fwf.microdata <- function(file, file.mdat.1, file.mdat.2, fileEncoding = "UTF-8"){
+  
+  ## read metadata
+  foo <- function(x) read.table(x, header = T, sep = "\t", 
+                                fileEncoding = fileEncoding,
+                                stringsAsFactors = FALSE)
+  mdat.1 <- foo(file.mdat.1)
+  mdat.2 <- foo(file.mdat.2)
+
+	## read fixed file using mdat1 metadata file
+  ## hides messages by read_fwf
+  suppressMessages(
+	  dat <- read_fwf(file, fwf_widths(mdat.1$width, col_names = mdat.1$var))
+	)
+	
+	# Replaces keys in raw data by actual column values
+	assign.labels <-  function(v, metadat){
+		
+		# happens!
+	  if (all(is.na(v)))
+	    return(v)
+	  
+	  # special cases: numeric, etc.
+		if (nrow(metadat) == 1 && metadat$tipo != "D"){
+			if (!is.na(metadat$nulo) && any(v == metadat$nulo, na.rm = T))
+				v[v == metadat$nulo] <- NA
+			
+			if (metadat$tipo == "N")
+			  return(as.numeric(v))
+			
+			if(metadat$tipo == "HHMM"){
+			  v <- as.numeric(v)
+				return(v %/% 100 + ( v %% 100 ) / 60)
+			}
+			return(v)
+		}
+		
+		# Check whether keys are numbers (usual case)
+	  # Mind the double negation!
+		# Then, format codes (maybe like "07") into codes such like "7"
+		v <- factor(v)
+		if (!grepl("[^0-9]", paste(levels(v), collapse = ""))){
+		  levels(v) <- as.character(as.numeric(levels(v)))
+		}
+		
+		# replace codes by descriptions (where available)
+		# if no match, leave underlying code: it may correspond to municipality, etc.
+		# indeed, in some cases (e.g., municipality) codes correspond to municipalities
+		# and extra codes mark small size municipalities
+		levels(v) <- sapply(levels(v), function(x){ 
+		  if (length(where <- which(metadat$llave == x)) > 0)
+		    metadat$valor[where]
+		  else x
+		})
+		                    
+		as.character(v)
+	}
+	
+	for(colname in colnames(dat))
+	  dat[[colname]] <- assign.labels(dat[[colname]], mdat.2[mdat.2$var == colname,])
+	
+	dat
+}
+
+###
+
+setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos/data/datos_partos")
+setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos/data/datos_muefet")
+
+assign("flag_num", 0, envir = .GlobalEnv)
+
+atencion = function(mensaje){
+  cat(mensaje)
+  assign("flag_num", 1, envir = .GlobalEnv)
+  
+}
+if(!"XLConnect" %in% installed.packages())
+  install.packages("XLConnect")
+
+library("XLConnect")
+library(stringr)  # hemos agreado esta para el tipo de variable str_detect.. en este caso todas son CHAR
+
+####################    Asignacin de parmetros    #######################
+#Recogemos la ruta del script que se esta ejecutando
+# script.dir <- dirname(sys.frame(1)$ofile)
+# setwd(script.dir)
+
+fcar <- function(fichero_micro) {
+
+## como era .R teniamos que darle toda la ruta.. no en Rmd
+#fichero_micro <- "Microdatos_MFT_A2007.txt"
+fichero_meta  <- "Disenoanonimizadonacimientos_07_15.xls"
+
+####################     INICIO     #########################
+start.time <- Sys.time()
+cat("\n")
+cat("\n Inicio: ")
+print.Date(start.time)
+t0 <- proc.time()
+
+## cuidado con los comentarios con acentos +, ñ... hay que eliminarlo
+
+#Lectura del fichero de metadatos (METAD), Hoja "Diseo" de archivo .xlsx
+tryCatch((workBook <- loadWorkbook(fichero_meta)), error=function(e) 
+        stop(paste("Error. No se puede abrir el fichero: ", e, fichero_meta,". Saliendo de la ejecucin...", sep = "")))
+df <- readNamedRegion(workBook, name ="METADATOS")  # hay que abrir el excel donde esta el metadato y marcar la region (con los nombres de las variables), y nombrarlo en la linea de formulas
+
+#
+nombresVarbls <- df[,1]
+#nombresTablas <- df[,2]
+posiciones    <- df[,3]
+tipo          <- df[,2]
+tamanio       <- length(nombresVarbls)
+
+# Lectura del fichero de microdatos (MICROD)
+if(length(df) == 6){   # hacer coincidir con el numero de variables marcadas
+  cat("Sin formato")
+  
+  #Capturamos las columnas con su tipo de dato
+  tipDatos <- as.vector(sapply(df[,2], function(x){
+    if(str_detect(x, "CHAR"))
+      "character"
+    else{
+      if(str_detect(x, "NUM"))
+        "numeric"
+    }
+  }
+  )
+  )
+  # Lectura del fichero de microdatos (MICROD), decimales con punto en MD  
+  tryCatch((df1 <- read.fwf(file = fichero_micro, widths= posiciones, colClasses=tipDatos)), error=function(e)
+    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
+  
+}else{
+  formatos <- df[,5]  
+  cat("Con formato")
+  
+  # Lectura del fichero de microdatos (MICROD), decimales sin punto en MD
+  tryCatch((df1 <- read.fortran(file = fichero_micro, format= formatos)), error=function(e)
+    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
+}
+
+#Aplicamos los nombres de la cabecera del registro
+names(df1) <- df[,1]
+fichero_salida <- df1
+
+
+#Liberacion de memoria y aclaraci?n de variables 
+#Values
+# rm(flag_num,workBook,nombresVarbls,nombresTablas,posiciones,tamanio,df,df1)
+# if(length(df) == 4){rm(tipDatos)}
+
+return(fichero_salida)
+
+# Mensaje final ##########################################
+end.time <- Sys.time()
+cat("\n")
+cat("\n Fin del proceso de lectura: ")
+print.Date(end.time)
+
+TTotal <- proc.time() - t0
+tiempo <- TTotal[3]
+
+if(tiempo < 60){
+  cat(paste("\n Tiempo transcurrido:", format(round(tiempo, 2), nsmall = 2), "segundos"))
+}else{
+  if(tiempo< 3600 & tiempo >= 60){
+    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/60, 2), nsmall = 2), "minutos"))
+  }else{
+    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/3600, 2), nsmall = 2), "horas"))
+  }
+}
+}
+
+
+```
+
+
+
+```{r metad,  eval=FALSE}
+
+
+## parte de aqui:
+#################################################################################
+# Nombre del programa:	MD_EPFmhogar_2021.R                                          
+# Autor:              	INE
+# Version:            	4.1
+# ?ltima modificaci?n: 	15 septiembre 2017
+#                                                                                
+# Descripci?n: 
+#	Este programa procesa un fichero de microdatos (md_EPFmhogar_2021.txt)
+#   a partir de un fichero de metadatos (.xlsx) que contiene 
+#   el dise?o de registro del archivo de microdatos. 
+#     Operaci?n estad?stica: Encuesta de Presupuestos Familiares_FICHERO MIEMBROS DEL HOGAR
+#     2021: A?o(s) de producci?n de los datos
+#
+# Entrada:                                                           
+#     - Dise?o de registro: 	dr_EPFmhogar_2016.xlsx
+#     - Archivo de microdatos: 	md_EPFmhogar_2021.txt
+# Salida: 
+#     - Archivo de microdatos en formato data.frame de R: fichero_salida 
+#                                                                                
+#################################################################################
+
+setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos/data/datos_partos")
+
+assign("flag_num", 0, envir = .GlobalEnv)
+
+atencion = function(mensaje){
+  cat(mensaje)
+  assign("flag_num", 1, envir = .GlobalEnv)
+  
+}
+if(!"XLConnect" %in% installed.packages())
+  install.packages("XLConnect")
+
+library("XLConnect")
+library(stringr)  # hemos agreado esta para el tipo de variable str_detect.. en este caso todas son CHAR
+
+####################    Asignacin de parmetros    #######################
+#Recogemos la ruta del script que se esta ejecutando
+script.dir <- dirname(sys.frame(1)$ofile)
+setwd(script.dir)
+
+## como era .R teniamos que darle toda la ruta.. no en Rmd
+fichero_micro <- "Microdatos_Partos_A2008.txt"
+fichero_meta  <- "Disenoanonimizadopartos_07_15.xls"
+
+####################     INICIO     #########################
+start.time <- Sys.time()
+cat("\n")
+cat("\n Inicio: ")
+print.Date(start.time)
+t0 <- proc.time()
+
+## cuidado con los comentarios con acentos +, ñ... hay que eliminarlo
+
+#Lectura del fichero de metadatos (METAD), Hoja "Diseo" de archivo .xlsx
+tryCatch((workBook <- loadWorkbook(fichero_meta)), error=function(e) 
+        stop(paste("Error. No se puede abrir el fichero: ", e, fichero_meta,". Saliendo de la ejecucin...", sep = "")))
+df <- readNamedRegion(workBook, name = "METADATOS")  # hay que abrir el excel donde esta el metadato y marcar la region (con los nombres de las variables), y nombrarlo en la linea de formulas
+
+#
+nombresVarbls <- df[,1]
+#nombresTablas <- df[,2]
+posiciones    <- df[,3]
+tipo          <- df[,2]
+tamanio       <- length(nombresVarbls)
+
+# Lectura del fichero de microdatos (MICROD)
+if(length(df) == 6){   # hacer coincidir con el numero de variables marcadas
+  cat("Sin formato")
+  
+  #Capturamos las columnas con su tipo de dato
+  tipDatos <- as.vector(sapply(df[,2], function(x){
+    if(str_detect(x, "CHAR"))
+      "character"
+    else{
+      if(str_detect(x, "NUM"))
+        "numeric"
+    }
+  }
+  )
+  )
+  # Lectura del fichero de microdatos (MICROD), decimales con punto en MD  
+  tryCatch((df1 <- read.fwf(file = fichero_micro, widths= posiciones, colClasses=tipDatos)), error=function(e)
+    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
+  
+}else{
+  formatos <- df[,5]  
+  cat("Con formato")
+  
+  # Lectura del fichero de microdatos (MICROD), decimales sin punto en MD
+  tryCatch((df1 <- read.fortran(file = fichero_micro, format= formatos)), error=function(e)
+    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
+}
+
+#Aplicamos los nombres de la cabecera del registro
+names(df1) <- df[,1]
+fichero_salida <- df1
+
+
+#Liberacion de memoria y aclaraci?n de variables 
+#Values
+rm(flag_num,workBook,nombresVarbls,nombresTablas,posiciones,tamanio,df,df1)
+if(length(df) == 4){rm(tipDatos)}
+
+
+# Mensaje final ##########################################
+end.time <- Sys.time()
+cat("\n")
+cat("\n Fin del proceso de lectura: ")
+print.Date(end.time)
+
+TTotal <- proc.time() - t0
+tiempo <- TTotal[3]
+
+if(tiempo < 60){
+  cat(paste("\n Tiempo transcurrido:", format(round(tiempo, 2), nsmall = 2), "segundos"))
+}else{
+  if(tiempo< 3600 & tiempo >= 60){
+    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/60, 2), nsmall = 2), "minutos"))
+  }else{
+    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/3600, 2), nsmall = 2), "horas"))
+  }
+}
+
+
+
+```{r mis, eval=FALSE}
+
+setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos")
+
+# con encuestas que ya tienen una progama.caratula en R
+
+# descargas
+
+fich= c("https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet20.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet19.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet18.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet17.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet16.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet15.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet14.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet13.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet12.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet11.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet10.zip")
+        # "https://www.ine.es/ftp/microdatos/mnp_muefet/datos muefet09.zip",
+        # "https://www.ine.es/ftp/microdatos/mnp_muefet/datos muefet08.zip",
+        # "https://www.ine.es/ftp/microdatos/mnp_muefet/datos muefet07.zip" )
+
+# al dejar un espacio en el nombre no funciona.. los espacios pasar a %20
+
+
+fich2= c("https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos20.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos19.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos18.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos17.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos16.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos15.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos14.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos13.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos12.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos11.zip")
+
+fich2b= c("https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos10.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos09.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos08.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos07.zip")
+
+
+fich3= c("https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos20.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos19.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos18.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos17.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos16.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos15.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos14.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos13.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos12.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos11.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos10.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos09.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos08.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos07.zip" )
+
+
+# metadatos
+
+fichr= c("https://www.ine.es/ftp/microdatos/mnp_partos/disreg_Partos.zip",
+         "https://www.ine.es/ftp/microdatos/mnp_nacim/disreg_nacimientos.zip",
+         "https://www.ine.es/ftp/microdatos/mnp_muefet/disreg_muefet.zip")
+
+
+
+walk(fich2b,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
+
+# guarda & unzip
+
+setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos")
+
+dir("data",pattern="zip") %>% paste0("data/",.) %>% walk(unzip,exdir="data")
+
+  walk(unzip,exdir="data/datos_nacimientos")
+
+
+
+
+walk(fichr,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
+walk(fich3,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
+walk(fich,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
+
+
+
+
+
+```
+
+
+```{r}
+# voy haciendolo uno a uno.. los partos tardan mas de 20 min
+
+setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos/data/datos_nacimientos")
+
+Microdatos_Nacimientos_A2007 <- fcar("Microdatos_Nacimientos_A2008.txt")
+Microdatos_Nacimientos_A2008 <- fcar("Microdatos_Nacimientos_A2008.txt")
+Microdatos_Nacimientos_A2009 <- fcar("Microdatos_Nacimientos_A2009.txt")
+Microdatos_Nacimientos_A2010 <- fcar("Microdatos_Nacimientos_A2010.txt")
+Microdatos_Nacimientos_A2011 <- fcar("Microdatos_Nacimientos_A2011.txt")
+Microdatos_Nacimientos_A2012 <- fcar("Microdatos_Nacimientos_A2012.txt")
+Microdatos_Nacimientos_A2013 <- fcar("Microdatos_Nacimientos_A2013.txt")
+Microdatos_Nacimientos_A2014 <- fcar("Microdatos_Nacimientos_A2014.txt")
+Microdatos_Nacimientos_A2015 <- fcar("Microdatos_Nacimientos_A2015.txt")
+Microdatos_Nacimientos_A2016 <- fcar("Microdatos_Nacimientos_A2016.txt")
+Microdatos_Nacimientos_A2017 <- fcar("Microdatos_Nacimientos_A2017.txt")
+Microdatos_Nacimientos_A2018 <- fcar("Microdatos_Nacimientos_A2018.txt")
+Microdatos_Nacimientos_A2019 <- fcar("Microdatos_Nacimientos_A2019.txt")
+Microdatos_Nacimientos_A2020 <- fcar("Microdatos_Nacimientos_A2020.txt")
+
+
+Microdatos_Nacimientos= list(a08=Microdatos_Nacimientos_A2008,a09=Microdatos_Nacimientos_A2009,a10=Microdatos_Nacimientos_A2010,a11=Microdatos_Nacimientos_A2011,a12=Microdatos_Nacimientos_A2012,a13=Microdatos_Nacimientos_A2013,a14=Microdatos_Nacimientos_A2014,a15=Microdatos_Nacimientos_A2015,a16=Microdatos_Nacimientos_A2016,a17=Microdatos_Nacimientos_A2017,a18=Microdatos_Nacimientos_A2018,a19=Microdatos_Nacimientos_A2019,a20=Microdatos_Nacimientos_A2020)
+
+
+save(Microdatos_Nacimientos, file="Microdatos_Nacimientos.Rdata")
+```
+
+
+```{r filtro datos nav/val}
+
+
+
+```
+
