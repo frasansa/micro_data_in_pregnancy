@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Obtención microdato INE"
 output: html_document
 date: "2022-09-12"
 editor_options: 
@@ -10,28 +10,8 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r tareas, eval=FALSE}
-
-# extraer autmaticamente el microdato, en el chunck miscelanea se trabaja esto, pero parta de una direccion ftp con el zip que lo contiene
-
-```
-
-```{r referencias, eval=FALSE}
-
-```
-
-
-```{r libraries}
-library(MicroDatosEs)   # defunciones, encuesta de presupuestos familiares, 
-library(pxR)   # son para  json pc-axis
-library(INEbaseR) 
-library(purrr) #walk
-library(tidyverse)
-
-```
-
 ```{r biblio,  eval=FALSE}
-
+# referencias para extraer datos del INE---------------------------------------
 https://ropenspain.es/paquetes/
 https://github.com/orgs/rOpenSpain/repositories
 https://rpubs.com/jaortega/EncuestaR1  #algunas rutinas, incluida la lectura de metadatos
@@ -40,14 +20,29 @@ https://rpubs.com/blad0914/746366 # introduccion a estadistica descriptiva
 https://www.rpubs.com/lihkir/838523 # visualizacion de datos
 https://www.cienciadedatos.net/documentos/31_seleccion_de_predictores_subset_selection_ridge_lasso_dimension_reduction  # Selección de predictores, regularización ridge, lasso, elastic net y reducción de dimensionalidad
 https://elartedeldato.com/blog/como-visualizar-los-datos-de-la-epa-con-r/
-  http://destio.us.es/calvo/descargas/asig/demografia/RparaDemografia.pdf # r para demografia
+http://destio.us.es/calvo/descargas/asig/demografia/RparaDemografia.pdf # r para demografia
 
 ```
 
+```{r libraries}
+# load libraries---------------------------------------------------------------
+library(MicroDatosEs)   # defunciones, encuesta de presupuestos familiares, 
+library(pxR)   # son para  json pc-axis
+library(INEbaseR) 
+library(purrr) #walk
+library(tidyverse)
+library(XLConnect)
+library(stringr)
+library(glue)
+
+```
+
+# Functions
+
+## Original function
+
 ```{r funciones read.fwf.microdata, eval=FALSE}
-
-
-##la lectura del microdato se basa en la funcion read.fwf.microdata
+#la lectura del microdato se basa en la funcion read.fwf.microdata------------
 read_fwf_microdata <- function(file, file.mdat.1, file.mdat.2, fileEncoding = "UTF-8"){
   
   ## read metadata
@@ -121,12 +116,13 @@ atencion = function(mensaje){
   assign("flag_num", 1, envir = .GlobalEnv)
   
 }
-if(!"XLConnect" %in% installed.packages())
-  install.packages("XLConnect")
 
-library("XLConnect")
-library(stringr)  # hemos agreado esta para el tipo de variable str_detect.. en este caso todas son CHAR
+```
 
+
+## function fcar
+
+```{r funciones read.fwf.microdata, eval=FALSE}
 ####################    Asignacin de parmetros    #######################
 #Recogemos la ruta del script que se esta ejecutando
 # script.dir <- dirname(sys.frame(1)$ofile)
@@ -225,8 +221,6 @@ if(tiempo < 60){
 
 
 ```{r metad,  eval=FALSE}
-
-
 ## parte de aqui:
 #################################################################################
 # Nombre del programa:	MD_EPFmhogar_2021.R                                          
@@ -258,11 +252,7 @@ atencion = function(mensaje){
   assign("flag_num", 1, envir = .GlobalEnv)
   
 }
-if(!"XLConnect" %in% installed.packages())
-  install.packages("XLConnect")
 
-library("XLConnect")
-library(stringr)  # hemos agreado esta para el tipo de variable str_detect.. en este caso todas son CHAR
 
 ####################    Asignacin de parmetros    #######################
 #Recogemos la ruta del script que se esta ejecutando
@@ -352,17 +342,19 @@ if(tiempo < 60){
   }
 }
 
-
-
-```{r mis, eval=FALSE}
-
 setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos")
 
-# con encuestas que ya tienen una progama.caratula en R
+```
 
-# descargas
 
-fich= c("https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet20.zip",
+```{r down,  eval=FALSE}
+# data-------------------------------------------------------------------------
+
+# A space in a file name (or direction) is a space in your soul
+# spaces to %20
+
+fetal_deaths_files <- c(
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet20.zip",
         "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet19.zip",
         "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet18.zip",
         "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet17.zip",
@@ -372,15 +364,14 @@ fich= c("https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet20.zip",
         "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet13.zip",
         "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet12.zip",
         "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet11.zip",
-        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet10.zip")
-        # "https://www.ine.es/ftp/microdatos/mnp_muefet/datos muefet09.zip",
-        # "https://www.ine.es/ftp/microdatos/mnp_muefet/datos muefet08.zip",
-        # "https://www.ine.es/ftp/microdatos/mnp_muefet/datos muefet07.zip" )
-
-# al dejar un espacio en el nombre no funciona.. los espacios pasar a %20
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos_muefet10.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos%20muefet09.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos%20muefet08.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_muefet/datos%20muefet07.zip" )
 
 
-fich2= c("https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos20.zip",
+birth_files <- c(
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos20.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos19.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos18.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos17.zip",
@@ -389,15 +380,15 @@ fich2= c("https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos20.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos14.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos13.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos12.zip",
-        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos11.zip")
-
-fich2b= c("https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos10.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos_nacimientos11.zip",
+        "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos10.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos09.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos08.zip",
         "https://www.ine.es/ftp/microdatos/mnp_nacim/datos%20nacimientos07.zip")
 
 
-fich3= c("https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos20.zip",
+labor_files <- c(
+        "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos20.zip",
         "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos19.zip",
         "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos18.zip",
         "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos17.zip",
@@ -413,43 +404,72 @@ fich3= c("https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos20.zip",
         "https://www.ine.es/ftp/microdatos/mnp_partos/datos_partos07.zip" )
 
 
-# metadatos
-
-fichr= c("https://www.ine.es/ftp/microdatos/mnp_partos/disreg_Partos.zip",
+# metadata--------------------------------------------------------------------
+metadata_files <- c(
+         "https://www.ine.es/ftp/microdatos/mnp_partos/disreg_Partos.zip",
          "https://www.ine.es/ftp/microdatos/mnp_nacim/disreg_nacimientos.zip",
          "https://www.ine.es/ftp/microdatos/mnp_muefet/disreg_muefet.zip")
-
-
-
-walk(fich2b,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
-
-# guarda & unzip
-
-setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos")
-
-dir("data",pattern="zip") %>% paste0("data/",.) %>% walk(unzip,exdir="data")
-
-  walk(unzip,exdir="data/datos_nacimientos")
-
-
-
-
-walk(fichr,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
-walk(fich3,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
-walk(fich,~download.file(.x,destfile=paste0("data/",basename(.x)), mode="wb"))
-
-
-
-
 
 ```
 
 
+```{r down,  eval=FALSE}
+# download data----------------------------------------------------------------
+dir.create(file.path("data", "fetal_death"))
+dir.create(file.path("data", "birth"))
+dir.create(file.path("data", "labor"))
+dir.create(file.path("data", "metadata"))
+
+# download fetal death
+walk(fetal_deaths_files,
+     ~download.file(.x,
+      destfile = file.path("data", "fetal_death", basename(.x)), mode = "wb"))
+
+# download birth
+walk(birth_files,
+     ~download.file(.x,
+      destfile = file.path("data", "birth", basename(.x)), mode = "wb"))
+
+# download labor
+walk(labor_files,
+     ~download.file(.x,
+      destfile = file.path("data", "labor", basename(.x)), mode = "wb"))
+
+# download metadata
+walk(metadata_files,
+     ~download.file(.x,
+      destfile = file.path("data", "metadata", basename(.x)), mode = "wb"))
+
+```
+
+
+```{r down,  eval=FALSE}
+# unzip several files function-------------------------------------------------
+unzip2 <- function(path){
+dir(path, pattern = "zip") %>%
+  paste0(path, "/", .) %>% 
+  walk(unzip, exdir = path)
+}
+
+# unzip files------------------------------------------------------------------
+unzip2(file.path("data", "fetal_death"))
+unzip2(file.path("data", "birth"))
+unzip2(file.path("data", "labor"))
+# metadata
+# problems with special characters (is done manual)
+# unzip2(file.path("data", "metadata"))
+
+```
+
+```{r}
+# Cambiar nombres--------------------------------------------------------------
+
+```
+
+
+
 ```{r}
 # voy haciendolo uno a uno.. los partos tardan mas de 20 min
-
-setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos/data/datos_nacimientos")
-
 Microdatos_Nacimientos_A2007 <- fcar("Microdatos_Nacimientos_A2008.txt")
 Microdatos_Nacimientos_A2008 <- fcar("Microdatos_Nacimientos_A2008.txt")
 Microdatos_Nacimientos_A2009 <- fcar("Microdatos_Nacimientos_A2009.txt")
