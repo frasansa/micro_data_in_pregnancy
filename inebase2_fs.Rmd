@@ -3,7 +3,7 @@ title: "Obtención microdato INE"
 output: html_document
 date: "2022-09-12"
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -29,323 +29,19 @@ http://destio.us.es/calvo/descargas/asig/demografia/RparaDemografia.pdf # r para
 library(MicroDatosEs)   # defunciones, encuesta de presupuestos familiares, 
 library(pxR)   # son para  json pc-axis
 library(INEbaseR) 
-library(purrr) #walk
+library(purrr) # walk
 library(tidyverse)
 library(XLConnect)
 library(stringr)
 library(glue)
+library(tictoc)
+library(data.table)
 
 ```
 
-# Functions
+# Descargar datos
 
-## Original function
-
-```{r funciones read.fwf.microdata, eval=FALSE}
-#la lectura del microdato se basa en la funcion read.fwf.microdata------------
-read_fwf_microdata <- function(file, file.mdat.1, file.mdat.2, fileEncoding = "UTF-8"){
-  
-  ## read metadata
-  foo <- function(x) read.table(x, header = T, sep = "\t", 
-                                fileEncoding = fileEncoding,
-                                stringsAsFactors = FALSE)
-  mdat.1 <- foo(file.mdat.1)
-  mdat.2 <- foo(file.mdat.2)
-
-	## read fixed file using mdat1 metadata file
-  ## hides messages by read_fwf
-  suppressMessages(
-	  dat <- read_fwf(file, fwf_widths(mdat.1$width, col_names = mdat.1$var))
-	)
-	
-	# Replaces keys in raw data by actual column values
-	assign.labels <-  function(v, metadat){
-		
-		# happens!
-	  if (all(is.na(v)))
-	    return(v)
-	  
-	  # special cases: numeric, etc.
-		if (nrow(metadat) == 1 && metadat$tipo != "D"){
-			if (!is.na(metadat$nulo) && any(v == metadat$nulo, na.rm = T))
-				v[v == metadat$nulo] <- NA
-			
-			if (metadat$tipo == "N")
-			  return(as.numeric(v))
-			
-			if(metadat$tipo == "HHMM"){
-			  v <- as.numeric(v)
-				return(v %/% 100 + ( v %% 100 ) / 60)
-			}
-			return(v)
-		}
-		
-		# Check whether keys are numbers (usual case)
-	  # Mind the double negation!
-		# Then, format codes (maybe like "07") into codes such like "7"
-		v <- factor(v)
-		if (!grepl("[^0-9]", paste(levels(v), collapse = ""))){
-		  levels(v) <- as.character(as.numeric(levels(v)))
-		}
-		
-		# replace codes by descriptions (where available)
-		# if no match, leave underlying code: it may correspond to municipality, etc.
-		# indeed, in some cases (e.g., municipality) codes correspond to municipalities
-		# and extra codes mark small size municipalities
-		levels(v) <- sapply(levels(v), function(x){ 
-		  if (length(where <- which(metadat$llave == x)) > 0)
-		    metadat$valor[where]
-		  else x
-		})
-		                    
-		as.character(v)
-	}
-	
-	for(colname in colnames(dat))
-	  dat[[colname]] <- assign.labels(dat[[colname]], mdat.2[mdat.2$var == colname,])
-	
-	dat
-}
-
-###
-
-assign("flag_num", 0, envir = .GlobalEnv)
-
-atencion = function(mensaje){
-  cat(mensaje)
-  assign("flag_num", 1, envir = .GlobalEnv)
-  
-}
-
-```
-
-
-## function fcar
-
-```{r funciones read.fwf.microdata, eval=FALSE}
-####################    Asignacin de parmetros    #######################
-#Recogemos la ruta del script que se esta ejecutando
-# script.dir <- dirname(sys.frame(1)$ofile)
-# setwd(script.dir)
-
-fcar <- function(fichero_micro) {
-
-## como era .R teniamos que darle toda la ruta.. no en Rmd
-#fichero_micro <- "Microdatos_MFT_A2007.txt"
-fichero_meta  <- "Disenoanonimizadonacimientos_07_15.xls"
-
-####################     INICIO     #########################
-start.time <- Sys.time()
-cat("\n")
-cat("\n Inicio: ")
-print.Date(start.time)
-t0 <- proc.time()
-
-## cuidado con los comentarios con acentos +, ñ... hay que eliminarlo
-
-#Lectura del fichero de metadatos (METAD), Hoja "Diseo" de archivo .xlsx
-tryCatch((workBook <- loadWorkbook(fichero_meta)), error=function(e) 
-        stop(paste("Error. No se puede abrir el fichero: ", e, fichero_meta,". Saliendo de la ejecucin...", sep = "")))
-df <- readNamedRegion(workBook, name ="METADATOS")  # hay que abrir el excel donde esta el metadato y marcar la region (con los nombres de las variables), y nombrarlo en la linea de formulas
-
-#
-nombresVarbls <- df[,1]
-#nombresTablas <- df[,2]
-posiciones    <- df[,3]
-tipo          <- df[,2]
-tamanio       <- length(nombresVarbls)
-
-# Lectura del fichero de microdatos (MICROD)
-if(length(df) == 6){   # hacer coincidir con el numero de variables marcadas
-  cat("Sin formato")
-  
-  #Capturamos las columnas con su tipo de dato
-  tipDatos <- as.vector(sapply(df[,2], function(x){
-    if(str_detect(x, "CHAR"))
-      "character"
-    else{
-      if(str_detect(x, "NUM"))
-        "numeric"
-    }
-  }
-  )
-  )
-  # Lectura del fichero de microdatos (MICROD), decimales con punto en MD  
-  tryCatch((df1 <- read.fwf(file = fichero_micro, widths= posiciones, colClasses=tipDatos)), error=function(e)
-    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
-  
-}else{
-  formatos <- df[,5]  
-  cat("Con formato")
-  
-  # Lectura del fichero de microdatos (MICROD), decimales sin punto en MD
-  tryCatch((df1 <- read.fortran(file = fichero_micro, format= formatos)), error=function(e)
-    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
-}
-
-#Aplicamos los nombres de la cabecera del registro
-names(df1) <- df[,1]
-fichero_salida <- df1
-
-
-#Liberacion de memoria y aclaraci?n de variables 
-#Values
-# rm(flag_num,workBook,nombresVarbls,nombresTablas,posiciones,tamanio,df,df1)
-# if(length(df) == 4){rm(tipDatos)}
-
-return(fichero_salida)
-
-# Mensaje final ##########################################
-end.time <- Sys.time()
-cat("\n")
-cat("\n Fin del proceso de lectura: ")
-print.Date(end.time)
-
-TTotal <- proc.time() - t0
-tiempo <- TTotal[3]
-
-if(tiempo < 60){
-  cat(paste("\n Tiempo transcurrido:", format(round(tiempo, 2), nsmall = 2), "segundos"))
-}else{
-  if(tiempo< 3600 & tiempo >= 60){
-    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/60, 2), nsmall = 2), "minutos"))
-  }else{
-    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/3600, 2), nsmall = 2), "horas"))
-  }
-}
-}
-
-
-```
-
-
-
-```{r metad,  eval=FALSE}
-## parte de aqui:
-#################################################################################
-# Nombre del programa:	MD_EPFmhogar_2021.R                                          
-# Autor:              	INE
-# Version:            	4.1
-# ?ltima modificaci?n: 	15 septiembre 2017
-#                                                                                
-# Descripci?n: 
-#	Este programa procesa un fichero de microdatos (md_EPFmhogar_2021.txt)
-#   a partir de un fichero de metadatos (.xlsx) que contiene 
-#   el dise?o de registro del archivo de microdatos. 
-#     Operaci?n estad?stica: Encuesta de Presupuestos Familiares_FICHERO MIEMBROS DEL HOGAR
-#     2021: A?o(s) de producci?n de los datos
-#
-# Entrada:                                                           
-#     - Dise?o de registro: 	dr_EPFmhogar_2016.xlsx
-#     - Archivo de microdatos: 	md_EPFmhogar_2021.txt
-# Salida: 
-#     - Archivo de microdatos en formato data.frame de R: fichero_salida 
-#                                                                                
-#################################################################################
-
-setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos/data/datos_partos")
-
-assign("flag_num", 0, envir = .GlobalEnv)
-
-atencion = function(mensaje){
-  cat(mensaje)
-  assign("flag_num", 1, envir = .GlobalEnv)
-  
-}
-
-
-####################    Asignacin de parmetros    #######################
-#Recogemos la ruta del script que se esta ejecutando
-script.dir <- dirname(sys.frame(1)$ofile)
-setwd(script.dir)
-
-## como era .R teniamos que darle toda la ruta.. no en Rmd
-fichero_micro <- "Microdatos_Partos_A2008.txt"
-fichero_meta  <- "Disenoanonimizadopartos_07_15.xls"
-
-####################     INICIO     #########################
-start.time <- Sys.time()
-cat("\n")
-cat("\n Inicio: ")
-print.Date(start.time)
-t0 <- proc.time()
-
-## cuidado con los comentarios con acentos +, ñ... hay que eliminarlo
-
-#Lectura del fichero de metadatos (METAD), Hoja "Diseo" de archivo .xlsx
-tryCatch((workBook <- loadWorkbook(fichero_meta)), error=function(e) 
-        stop(paste("Error. No se puede abrir el fichero: ", e, fichero_meta,". Saliendo de la ejecucin...", sep = "")))
-df <- readNamedRegion(workBook, name = "METADATOS")  # hay que abrir el excel donde esta el metadato y marcar la region (con los nombres de las variables), y nombrarlo en la linea de formulas
-
-#
-nombresVarbls <- df[,1]
-#nombresTablas <- df[,2]
-posiciones    <- df[,3]
-tipo          <- df[,2]
-tamanio       <- length(nombresVarbls)
-
-# Lectura del fichero de microdatos (MICROD)
-if(length(df) == 6){   # hacer coincidir con el numero de variables marcadas
-  cat("Sin formato")
-  
-  #Capturamos las columnas con su tipo de dato
-  tipDatos <- as.vector(sapply(df[,2], function(x){
-    if(str_detect(x, "CHAR"))
-      "character"
-    else{
-      if(str_detect(x, "NUM"))
-        "numeric"
-    }
-  }
-  )
-  )
-  # Lectura del fichero de microdatos (MICROD), decimales con punto en MD  
-  tryCatch((df1 <- read.fwf(file = fichero_micro, widths= posiciones, colClasses=tipDatos)), error=function(e)
-    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
-  
-}else{
-  formatos <- df[,5]  
-  cat("Con formato")
-  
-  # Lectura del fichero de microdatos (MICROD), decimales sin punto en MD
-  tryCatch((df1 <- read.fortran(file = fichero_micro, format= formatos)), error=function(e)
-    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecucin...", sep = "")))
-}
-
-#Aplicamos los nombres de la cabecera del registro
-names(df1) <- df[,1]
-fichero_salida <- df1
-
-
-#Liberacion de memoria y aclaraci?n de variables 
-#Values
-rm(flag_num,workBook,nombresVarbls,nombresTablas,posiciones,tamanio,df,df1)
-if(length(df) == 4){rm(tipDatos)}
-
-
-# Mensaje final ##########################################
-end.time <- Sys.time()
-cat("\n")
-cat("\n Fin del proceso de lectura: ")
-print.Date(end.time)
-
-TTotal <- proc.time() - t0
-tiempo <- TTotal[3]
-
-if(tiempo < 60){
-  cat(paste("\n Tiempo transcurrido:", format(round(tiempo, 2), nsmall = 2), "segundos"))
-}else{
-  if(tiempo< 3600 & tiempo >= 60){
-    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/60, 2), nsmall = 2), "minutos"))
-  }else{
-    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/3600, 2), nsmall = 2), "horas"))
-  }
-}
-
-setwd("~/Dropbox/ju/Proyectos/fis2022/embarzo_farmacos")
-
-```
-
+***
 
 ```{r down,  eval=FALSE}
 # data-------------------------------------------------------------------------
@@ -412,6 +108,9 @@ metadata_files <- c(
 
 ```
 
+# Descomprimir datos
+
+***
 
 ```{r down,  eval=FALSE}
 # download data----------------------------------------------------------------
@@ -455,47 +154,290 @@ dir(path, pattern = "zip") %>%
 unzip2(file.path("data", "fetal_death"))
 unzip2(file.path("data", "birth"))
 unzip2(file.path("data", "labor"))
+
 # metadata
 # problems with special characters (is done manual)
 # unzip2(file.path("data", "metadata"))
 
 ```
 
-```{r}
-# Cambiar nombres--------------------------------------------------------------
+# Cambiar nombres
+
+***
+
+Se homogenizan los nombres de los ficheros a mano.
+
+<br>
+
+# Obtener tablas con los microdatos
+
+***
+
+## function fcar
+
+```{r funciones read.fwf.microdata, eval=FALSE}
+# función para leer los microdatos
+fcar <- function(fichero_micro, fichero_meta, save_name) {
+
+# Inicio temporizador
+tic()
+
+####################     INICIO     #########################
+cat("\n Inicio: ")
+
+#Lectura del fichero de metadatos (METAD), Hoja "Diseño" de archivo .xlsx
+# Leer excel a partir de la fila 4
+df <- readxl::read_excel(fichero_meta, skip = 3)
+
+# Lectura del fichero de microdatos (MICROD)
+df1 <- read.fwf(file = fichero_micro, 
+                            # colClasses = tipDatos
+                            widths = df$Longitud
+                            )
+  
+# Aplicamos los nombres de la cabecera del registro
+names(df1) <- df$Nombre
+
+fwrite(df1, file.path("data", "procesados", save_name))
+
+# Mensaje final ##########################################
+cat("\n Fin del proceso de lectura: ")
+
+# Fin temporizador
+toc()
+
+}
+
+```
+
+## Obtener datos nacimientos procesados
+
+***
+
+```{r, eval=FALSE}
+# Obtener nacimientos procesados-----------------------------------------------
+path_birth <- file.path("data", "birth")
+
+# prueba
+# fcar(fichero_micro = file.path(path_birth, "Microdatos_Nacimientos_A2007.txt"),
+#      fichero_meta = file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+#      save_name = "birth_2007.csv")
+
+# list of arguments for the function
+lista_micro <- c(
+  file.path(path_birth, "Microdatos_Nacimientos_A2007.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2008.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2009.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2010.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2011.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2012.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2013.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2014.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2015.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2016.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2017.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2018.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2019.txt"),
+  file.path(path_birth, "Microdatos_Nacimientos_A2020.txt")
+  )
+
+lista_meta <- c(
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos_07_15.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_birth, "meta", "Diseñoanonimizadonacimientos2016 y sigs_con nestudios-ocupac_rela.xls")
+  )
+
+lista_save <- c(
+  "birth_2007.csv",
+  "birth_2008.csv",
+  "birth_2009.csv",
+  "birth_2010.csv",
+  "birth_2011.csv",
+  "birth_2012.csv",
+  "birth_2013.csv",
+  "birth_2014.csv",
+  "birth_2015.csv",
+  "birth_2016.csv",
+  "birth_2017.csv",
+  "birth_2018.csv",
+  "birth_2019.csv",
+  "birth_2020.csv"
+  )
+
+pwalk(
+  # define the arguments of the function
+  .l = list(fichero_micro = lista_micro, 
+                fichero_meta = lista_meta, 
+                save_name = lista_save), 
+  # call the function
+  .f = fcar)
 
 ```
 
 
+## Obtener datos muerte fetal procesados
+
+***
 
 ```{r}
-# voy haciendolo uno a uno.. los partos tardan mas de 20 min
-Microdatos_Nacimientos_A2007 <- fcar("Microdatos_Nacimientos_A2008.txt")
-Microdatos_Nacimientos_A2008 <- fcar("Microdatos_Nacimientos_A2008.txt")
-Microdatos_Nacimientos_A2009 <- fcar("Microdatos_Nacimientos_A2009.txt")
-Microdatos_Nacimientos_A2010 <- fcar("Microdatos_Nacimientos_A2010.txt")
-Microdatos_Nacimientos_A2011 <- fcar("Microdatos_Nacimientos_A2011.txt")
-Microdatos_Nacimientos_A2012 <- fcar("Microdatos_Nacimientos_A2012.txt")
-Microdatos_Nacimientos_A2013 <- fcar("Microdatos_Nacimientos_A2013.txt")
-Microdatos_Nacimientos_A2014 <- fcar("Microdatos_Nacimientos_A2014.txt")
-Microdatos_Nacimientos_A2015 <- fcar("Microdatos_Nacimientos_A2015.txt")
-Microdatos_Nacimientos_A2016 <- fcar("Microdatos_Nacimientos_A2016.txt")
-Microdatos_Nacimientos_A2017 <- fcar("Microdatos_Nacimientos_A2017.txt")
-Microdatos_Nacimientos_A2018 <- fcar("Microdatos_Nacimientos_A2018.txt")
-Microdatos_Nacimientos_A2019 <- fcar("Microdatos_Nacimientos_A2019.txt")
-Microdatos_Nacimientos_A2020 <- fcar("Microdatos_Nacimientos_A2020.txt")
+# obtener fetal death----------------------------------------------------------
+# prueba
+path_fetal_death <- file.path("data", "fetal_death")
+# fcar(fichero_micro = file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2007.txt"),
+#      fichero_meta = file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+#      save_name = "fetal_death_2007.csv")
+
+# list of arguments for the function
+lista_micro <- c(
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2007.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2008.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2009.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2010.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2011.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2012.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2013.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2014.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2015.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2016.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2017.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2018.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2019.txt"),
+  file.path(path_fetal_death, "Microdatos_Muerte_Fetal_A2020.txt")
+  )
+
+lista_meta <- c(
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT_07_15.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT2016 y sigs_con nestudios-ocupac_rela.xls"),
+  file.path(path_fetal_death, "meta", "DiseñoanonimizadoMFT2016 y sigs_con nestudios-ocupac_rela.xls")
+  )
+
+lista_save <- c(
+  "fetal_death_2007.csv",
+  "fetal_death_2008.csv",
+  "fetal_death_2009.csv",
+  "fetal_death_2010.csv",
+  "fetal_death_2011.csv",
+  "fetal_death_2012.csv",
+  "fetal_death_2013.csv",
+  "fetal_death_2014.csv",
+  "fetal_death_2015.csv",
+  "fetal_death_2016.csv",
+  "fetal_death_2017.csv",
+  "fetal_death_2018.csv",
+  "fetal_death_2019.csv",
+  "fetal_death_2020.csv"
+  )
+
+pwalk(
+  # define the arguments of the function
+  .l = list(fichero_micro = lista_micro, 
+                fichero_meta = lista_meta, 
+                save_name = lista_save), 
+  # call the function
+  .f = fcar)
 
 
-Microdatos_Nacimientos= list(a08=Microdatos_Nacimientos_A2008,a09=Microdatos_Nacimientos_A2009,a10=Microdatos_Nacimientos_A2010,a11=Microdatos_Nacimientos_A2011,a12=Microdatos_Nacimientos_A2012,a13=Microdatos_Nacimientos_A2013,a14=Microdatos_Nacimientos_A2014,a15=Microdatos_Nacimientos_A2015,a16=Microdatos_Nacimientos_A2016,a17=Microdatos_Nacimientos_A2017,a18=Microdatos_Nacimientos_A2018,a19=Microdatos_Nacimientos_A2019,a20=Microdatos_Nacimientos_A2020)
+```
 
+## Obtener datos partos procesados
 
-save(Microdatos_Nacimientos, file="Microdatos_Nacimientos.Rdata")
+***
+
+```{r, eval=FALSE}
+# Obtener nacimientos procesados-----------------------------------------------
+path_labor <- file.path("data", "labor")
+
+# prueba
+# fcar(fichero_micro = file.path(path_labor, "Microdatos_Partos_A2007.txt"),
+#      fichero_meta = file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+#      save_name = "labor_2007.csv")
+
+# list of arguments for the function
+lista_micro <- c(
+  # file.path(path_labor, "Microdatos_Partos_A2007.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2008.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2009.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2010.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2011.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2012.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2013.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2014.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2015.txt"),
+  # file.path(path_labor, "Microdatos_Partos_A2016.txt"),
+  file.path(path_labor, "Microdatos_Partos_A2017.txt"),
+  file.path(path_labor, "Microdatos_Partos_A2018.txt"),
+  file.path(path_labor, "Microdatos_Partos_A2019.txt"),
+  file.path(path_labor, "Microdatos_Partos_A2020.txt")
+  )
+
+lista_meta <- c(
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_07_15.xls"),
+  # file.path(path_labor, "meta", "Diseñoanonimizadopartos_16_20.xls"),
+  file.path(path_labor, "meta", "Diseñoanonimizadopartos_16_20.xls"),
+  file.path(path_labor, "meta", "Diseñoanonimizadopartos_16_20.xls"),
+  file.path(path_labor, "meta", "Diseñoanonimizadopartos_16_20.xls"),
+  file.path(path_labor, "meta", "Diseñoanonimizadopartos_16_20.xls")
+  )
+
+lista_save <- c(
+  # "labor_2007.csv",
+  # "labor_2008.csv",
+  # "labor_2009.csv",
+  # "labor_2010.csv",
+  # "labor_2011.csv",
+  # "labor_2012.csv",
+  # "labor_2013.csv",
+  # "labor_2014.csv",
+  # "labor_2015.csv",
+  # "labor_2016.csv",
+  "labor_2017.csv",
+  "labor_2018.csv",
+  "labor_2019.csv",
+  "labor_2020.csv"
+  )
+
+pwalk(
+  # define the arguments of the function
+  .l = list(fichero_micro = lista_micro, 
+                fichero_meta = lista_meta, 
+                save_name = lista_save), 
+  # call the function
+  .f = fcar)
+
 ```
 
 
 ```{r filtro datos nav/val}
-
-
 
 ```
 
