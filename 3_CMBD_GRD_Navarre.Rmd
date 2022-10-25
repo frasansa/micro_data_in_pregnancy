@@ -1,0 +1,146 @@
+---
+title: "Análisis CMBD de Navarra"
+author: "Francisco Sanchez Saez"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# cargar librerías y funciones-------------------------------------------------
+source(file.path("..", "scripts", "Librerias.R"))
+source(file.path("..", "scripts", "Funciones.R"))
+
+```
+
+# Cargar datos
+
+```{r}
+# load data--------------------------------------------------------------------
+cmbd_grd_navarra <- read_excel(file.path("datos", "CMBD_embarazadas_GRD.xlsx"),
+                               col_types = c("numeric", 
+                                             "date", 
+                                             "date",
+                                             rep("text", 41),
+                                             "numeric",
+                                             "numeric")) %>% 
+  clean_names() %>% 
+  mutate(fecha_inicio_contacto = ymd(str_sub(fecha_inicio_contacto, 1, 10)),
+         fecha_fin_contacto = ymd(str_sub(fecha_fin_contacto, 1, 10))
+         )
+
+cmbd_grd_navarra_2016 <- cmbd_grd_navarra %>% 
+  filter(fecha_inicio_contacto >= ymd(20160101),
+         fecha_inicio_contacto <= ymd(20161231))
+
+
+cmbd_navarra_2016 <- read_excel(file.path("datos", "CMBD_embarazadas.xlsx"),
+                                sheet = "Mujeres fértiles 2016",
+                                col_types = c("numeric", 
+                                             "date", 
+                                             "date",
+                                             rep("text", 41),
+                                             "numeric",
+                                             "numeric")) %>% 
+  clean_names() %>% 
+  mutate(fecha_inicio_contacto = ymd(str_sub(fecha_inicio_contacto, 1, 10)),
+         fecha_fin_contacto = ymd(str_sub(fecha_fin_contacto, 1, 10))
+         )
+
+```
+
+# Descriptivo GRD 2016
+
+```{r}
+# count grd
+cmbd_grd_navarra_2016 %>% count(grd_inicio)
+cmbd_grd_navarra_2016 %>% count(grd_fin)
+cmbd_grd_navarra_2016 %>% count(grd_inicio, grd_fin)
+# 6229
+
+```
+
+# Introducir categorías en el cmbd
+
+```{r}
+# función busca categoría
+cumplimentar_categoria <- function(base, nombre_categoria, lista) {
+
+# obtener lista códigos de la categoría  
+lista_codigos_categoria <- lista %>% 
+  pluck(nombre_categoria) 
+
+base %>% 
+    mutate({{nombre_categoria}} := if_else(if_any(diag1_cod:proc10_cod, 
+                  ~str_starts(., str_c(lista_codigos_categoria, 
+                              collapse = "|")) == TRUE),
+                  1, 0, missing = 0))
+}
+
+```
+
+# Cualquier código relacionado con el embarazo
+
+```{r}
+# bucle------------------------------------------------------------------------
+mbds_categorias_todas <- cumplimentar_categoria(cmbd_navarra_2016, "todos", 
+                                                lista_codigos_todos)
+
+mbds_categorias_todas_preg <- mbds_categorias_todas %>% filter(todos == 1)
+
+```
+
+```{r}
+# comprobar casos de más-------------------------------------------------------
+mbds_categorias_todas_preg %>% anti_join(cmbd_grd_navarra_2016, 
+                          by = c("paciente_codigo", "fecha_inicio_contacto")) 
+
+cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_todas_preg, 
+                          by = c("paciente_codigo", "fecha_inicio_contacto"))
+
+```
+
+# Por categorías
+
+```{r}
+# categorías-------------------------------------------------------------------
+categorias <- lista_codigos %>% names()
+
+base <- cmbd_navarra_2016
+for(i in seq_along(categorias)) {
+base <- cumplimentar_categoria(base, categorias[i], lista_codigos)
+}
+mbds_categorias <- base
+
+# recuento de categorías-------------------------------------------------------
+mbds_categorias %>% 
+  summarise(across(datos_termination:datos_livebirth, sum))
+
+mbds_categorias_preg <- mbds_categorias %>% 
+  filter(datos_termination == 1     |
+         datos_abortos_espont == 1  |
+         datos_ectopic == 1  |
+         datos_ongoing == 1  |
+         datos_livebirth == 1  |
+         datos_stillbirth == 1)
+
+# 6286
+
+```
+
+
+```{r}
+# comprobar casos de más-------------------------------------------------------
+mbds_categorias_preg %>% anti_join(cmbd_grd_navarra_2016, 
+                          by = c("paciente_codigo", "fecha_inicio_contacto")) %>% 
+  distinct(grd_inicio)
+
+cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_preg, 
+                          by = c("paciente_codigo", "fecha_inicio_contacto"))
+
+mbds_categorias_preg %>% filter(paciente_codigo == 1220)
+
+lista_codigos %>% map(~sum(.=="O72.2"))
+
+```
+

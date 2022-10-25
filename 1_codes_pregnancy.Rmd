@@ -1,0 +1,97 @@
+---
+title: "codes_from_csv"
+author: "Francisco Sanchez"
+date: '2022-08-18'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source(file.path("..", "Scripts", "Librerias.r"))
+source(file.path("..", "Scripts", "Funciones.r"))
+
+```
+
+```{r}
+# cargar datos-----------------------------------------------------------------
+datos <- fread(file.path("Datos",
+              "20221017_V2_ALL_full_codelist_pregnancy.csv"))
+
+datos %>% count(coding_system)
+
+```
+
+```{r}
+# limpiar base-----------------------------------------------------------------
+datos_clean <- datos %>% filter(coding_system %in% c("ICD9CM", "ICD10", 
+                                                     "ICD10CM", "ICD10DA"))
+
+datos_clean %>% filter(str_detect(code, "Z87.891") == TRUE)
+
+```
+
+```{r}
+datos_clean %>% distinct(event_definition)
+datos_clean %>% distinct(event_definition, event_abbreviation)
+
+```
+
+
+```{r}
+# interrupción voluntaria del embarazo-----------------------------------------
+datos_termination <- datos_clean %>% filter(event_definition %in% 
+                c("Elective Termination Pregnancy"))
+
+```
+
+```{r}
+# abortos espontáneos----------------------------------------------------------
+datos_abortos_espont <- datos_clean %>% filter(event_definition %in% 
+                c("Spontaneous abortion"))
+
+```
+
+```{r}
+# muerte fetal-----------------------------------------------------------------
+datos_stillbirth <- datos_clean %>% filter(event_definition %in% 
+                c("Stillbirth"))
+
+```
+
+```{r}
+# embarazo ectópico-----------------------------------------------------------
+datos_ectopic <- datos_clean %>% filter(event_definition %in% 
+                c("Ectopic pregnancy"))
+
+```
+
+```{r}
+# ongoing y unknown------------------------------------------------------------
+datos_ongoing <- datos_clean %>% filter(event_definition %in% 
+                c("Ongoing Pregnancy"))
+
+datos_livebirth <- datos_clean %>% filter(event_definition %in% 
+                c("Livebirth"))
+
+```
+
+```{r}
+# guardar datos----------------------------------------------------------------
+lista_datos <- lst(datos_termination, 
+                   datos_abortos_espont,
+                   datos_stillbirth,
+                   datos_ectopic,
+                   datos_ongoing,
+                   datos_livebirth)
+
+write_xlsx(x = lista_datos, file.path("Datos", 
+                          "lista_codigos_embarazo_2022_10_24.xlsx"))
+
+```
+
+```{r}
+lista_codigos <- lista_datos %>% map(.f = ~pull(.x, code))
+lista_codigos_todos <- list(todos = datos_clean %>% pull(code) %>% str_c("^", .))
+
+```
+

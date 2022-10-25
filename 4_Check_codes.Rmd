@@ -1,0 +1,25 @@
+---
+title: "opt_cap7"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# cargar librerías y funciones-------------------------------------------------
+source(file.path("..", "scripts", "Librerias.R"))
+source(file.path("..", "scripts", "Funciones.R"))
+
+```
+
+```{r}
+# función que busca que códigos coinciden de una fila del cmbd con la lista
+mirar_codigos <- function(base, id, fecha_ini){
+  base %>% filter(id = id,
+                  fecha_inicio_contacto == fecha_ini)
+}
+
+```
+
+
+<br>
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>

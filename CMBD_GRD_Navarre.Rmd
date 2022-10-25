@@ -1,0 +1,70 @@
+---
+title: "Análisis CMBD de Navarra"
+author: "Francisco Sanchez Saez"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# cargar librerías y funciones-------------------------------------------------
+source(file.path("..", "scripts", "Librerias.R"))
+source(file.path("..", "scripts", "Funciones.R"))
+
+```
+
+# Cargar datos
+
+```{r}
+# load data--------------------------------------------------------------------
+cmbd_grd_navarra <- read_excel(file.path("datos", "CMBD_embarazadas_GRD.xlsx"),
+                               col_types = c("numeric", 
+                                             "date", 
+                                             "date",
+                                             rep("text", 41),
+                                             "numeric",
+                                             "numeric")) %>% 
+  clean_names() %>% 
+  mutate(fecha_inicio_contacto = ymd(str_sub(fecha_inicio_contacto, 1, 10)),
+         fecha_fin_contacto = ymd(str_sub(fecha_fin_contacto, 1, 10))
+         )
+
+cmbd_grd_navarra_2016 <- cmbd_grd_navarra %>% 
+  filter(fecha_inicio_contacto >= ymd(20160101),
+         fecha_inicio_contacto <= ymd(20161231))
+
+
+cmbd_navarra_2016 <- read_excel(file.path("datos", "CMBD_embarazadas.xlsx"),
+                                sheet = "Mujeres fértiles 2016",
+                                col_types = c("numeric", 
+                                             "date", 
+                                             "date",
+                                             rep("text", 41),
+                                             "numeric",
+                                             "numeric")) %>% 
+  clean_names() %>% 
+  mutate(fecha_inicio_contacto = ymd(str_sub(fecha_inicio_contacto, 1, 10)),
+         fecha_fin_contacto = ymd(str_sub(fecha_fin_contacto, 1, 10))
+         )
+
+```
+
+# Descriptivo GRD 2016
+
+```{r}
+# count grd
+cmbd_grd_navarra_2016 %>% count(grd_inicio)
+cmbd_grd_navarra_2016 %>% count(grd_fin)
+cmbd_grd_navarra_2016 %>% count(grd_inicio, grd_fin)
+
+```
+
+# Buscar categorías algoritmo
+
+```{r}
+# search categories------------------------------------------------------------
+cmbd_navarra_2016
+
+
+```
+
