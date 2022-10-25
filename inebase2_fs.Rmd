@@ -437,7 +437,4 @@ pwalk(
 ```
 
 
-```{r filtro datos nav/val}
-
-```
 
