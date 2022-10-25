@@ -14,7 +14,7 @@ source(file.path("..", "Scripts", "Funciones.r"))
 
 ```{r}
 # cargar datos-----------------------------------------------------------------
-datos <- fread(file.path("Datos",
+datos <- fread(file.path("Data", "preg_codes",
               "20221017_V2_ALL_full_codelist_pregnancy.csv"))
 
 datos %>% count(coding_system)
@@ -25,8 +25,6 @@ datos %>% count(coding_system)
 # limpiar base-----------------------------------------------------------------
 datos_clean <- datos %>% filter(coding_system %in% c("ICD9CM", "ICD10", 
                                                      "ICD10CM", "ICD10DA"))
-
-datos_clean %>% filter(str_detect(code, "Z87.891") == TRUE)
 
 ```
 
@@ -84,14 +82,18 @@ lista_datos <- lst(datos_termination,
                    datos_ongoing,
                    datos_livebirth)
 
-write_xlsx(x = lista_datos, file.path("Datos", 
+write_xlsx(x = lista_datos, file.path("Data", "preg_codes",
                           "lista_codigos_embarazo_2022_10_24.xlsx"))
 
 ```
 
 ```{r}
-lista_codigos <- lista_datos %>% map(.f = ~pull(.x, code))
-lista_codigos_todos <- list(todos = datos_clean %>% pull(code) %>% str_c("^", .))
+lista_codigos <- lista_datos %>% purrr::map(.f = ~pull(.x, code))
+lista_codigos_all <- list(all = datos_clean %>% pull(code) %>% str_c("^", .))
+lista_codigos_all_0 <- list(all = datos_clean %>% pull(code))
+
+saveRDS(lista_codigos, file.path("Data", "preg_codes", "lista_codigos.RDS"))
+saveRDS(lista_codigos_all, file.path("Data", "preg_codes", "lista_codigos_all.RDS"))
 
 ```
 

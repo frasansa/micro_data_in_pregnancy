@@ -12,11 +12,33 @@ source(file.path("..", "scripts", "Funciones.R"))
 ```
 
 ```{r}
+# load data--------------------------------------------------------------------
+# Se carga en el fichero 3_CMBD_GRD_Navarre
+
+```
+
+
+```{r}
+# comprobar casos de más-------------------------------------------------------
+mbds_new_cases <- mbds_categorias_all_preg %>% anti_join(cmbd_grd_navarra_2016, 
+                        by = c("paciente_codigo", "fecha_inicio_contacto")) 
+
+cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_all_preg, 
+                          by = c("paciente_codigo", "fecha_inicio_contacto"))
+
+```
+
+```{r}
 # función que busca que códigos coinciden de una fila del cmbd con la lista
-mirar_codigos <- function(base, id, fecha_ini){
-  base %>% filter(id = id,
-                  fecha_inicio_contacto == fecha_ini)
-}
+mbds_new_cases_clean <- mbds_new_cases %>%   
+mutate(across(diag1_cod:proc10_cod, 
+                ~if_else(str_detect(.x, str_c(lista_codigos_all$all, 
+                              collapse = "|")), .x, NA_character_)))
+    
+
+mbds_new_cases_clean
+
+fwrite(mbds_new_cases_clean, file.path("results", "otros_ingresos_preg.csv"))
 
 ```
 

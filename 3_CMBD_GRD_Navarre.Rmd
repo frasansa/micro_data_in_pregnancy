@@ -17,7 +17,9 @@ source(file.path("..", "scripts", "Funciones.R"))
 
 ```{r}
 # load data--------------------------------------------------------------------
-cmbd_grd_navarra <- read_excel(file.path("datos", "CMBD_embarazadas_GRD.xlsx"),
+# cmbd filtrado por GRD
+cmbd_grd_navarra <- read_excel(file.path("data", "cmbd_navarra",
+                                         "CMBD_embarazadas_GRD.xlsx"),
                                col_types = c("numeric", 
                                              "date", 
                                              "date",
@@ -33,8 +35,9 @@ cmbd_grd_navarra_2016 <- cmbd_grd_navarra %>%
   filter(fecha_inicio_contacto >= ymd(20160101),
          fecha_inicio_contacto <= ymd(20161231))
 
-
-cmbd_navarra_2016 <- read_excel(file.path("datos", "CMBD_embarazadas.xlsx"),
+# Todo el cmbd de 2016
+cmbd_navarra_2016 <- read_excel(file.path("data", "cmbd_navarra",
+                                          "CMBD_embarazadas.xlsx"),
                                 sheet = "Mujeres fértiles 2016",
                                 col_types = c("numeric", 
                                              "date", 
@@ -46,8 +49,12 @@ cmbd_navarra_2016 <- read_excel(file.path("datos", "CMBD_embarazadas.xlsx"),
   mutate(fecha_inicio_contacto = ymd(str_sub(fecha_inicio_contacto, 1, 10)),
          fecha_fin_contacto = ymd(str_sub(fecha_fin_contacto, 1, 10))
          )
+# listas de códigos
+lista_codigos  <- readRDS(file.path("Data", "preg_codes", "lista_codigos.RDS"))
+lista_codigos_all <- readRDS(file.path("Data", "preg_codes", "lista_codigos_all.RDS"))
 
 ```
+
 
 # Descriptivo GRD 2016
 
@@ -83,19 +90,19 @@ base %>%
 
 ```{r}
 # bucle------------------------------------------------------------------------
-mbds_categorias_todas <- cumplimentar_categoria(cmbd_navarra_2016, "todos", 
-                                                lista_codigos_todos)
+mbds_categorias_all <- cumplimentar_categoria(cmbd_navarra_2016, "all", 
+                                                lista_codigos_all)
 
-mbds_categorias_todas_preg <- mbds_categorias_todas %>% filter(todos == 1)
+mbds_categorias_all_preg <- mbds_categorias_all %>% filter(all == 1)
 
 ```
 
 ```{r}
 # comprobar casos de más-------------------------------------------------------
-mbds_categorias_todas_preg %>% anti_join(cmbd_grd_navarra_2016, 
+mbds_categorias_all_preg %>% anti_join(cmbd_grd_navarra_2016, 
                           by = c("paciente_codigo", "fecha_inicio_contacto")) 
 
-cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_todas_preg, 
+cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_all_preg, 
                           by = c("paciente_codigo", "fecha_inicio_contacto"))
 
 ```
@@ -129,18 +136,5 @@ mbds_categorias_preg <- mbds_categorias %>%
 ```
 
 
-```{r}
-# comprobar casos de más-------------------------------------------------------
-mbds_categorias_preg %>% anti_join(cmbd_grd_navarra_2016, 
-                          by = c("paciente_codigo", "fecha_inicio_contacto")) %>% 
-  distinct(grd_inicio)
 
-cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_preg, 
-                          by = c("paciente_codigo", "fecha_inicio_contacto"))
-
-mbds_categorias_preg %>% filter(paciente_codigo == 1220)
-
-lista_codigos %>% map(~sum(.=="O72.2"))
-
-```
 
