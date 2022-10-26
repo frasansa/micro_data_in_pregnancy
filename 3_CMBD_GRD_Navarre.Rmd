@@ -52,6 +52,7 @@ cmbd_navarra_2016 <- read_excel(file.path("data", "cmbd_navarra",
 # listas de códigos
 lista_codigos  <- readRDS(file.path("Data", "preg_codes", "lista_codigos.RDS"))
 lista_codigos_all <- readRDS(file.path("Data", "preg_codes", "lista_codigos_all.RDS"))
+lista_codigos_and_procedures_all <- readRDS(file.path("Data", "preg_codes", "lista_codigos_and_procedures_all.RDS"))
 
 ```
 
@@ -90,8 +91,9 @@ base %>%
 
 ```{r}
 # bucle------------------------------------------------------------------------
-mbds_categorias_all <- cumplimentar_categoria(cmbd_navarra_2016, "all", 
-                                                lista_codigos_all)
+mbds_categorias_all <- cumplimentar_categoria(cmbd_navarra_2016, 
+                                              "all", 
+                                              lista_codigos_and_procedures_all)
 
 mbds_categorias_all_preg <- mbds_categorias_all %>% filter(all == 1)
 
