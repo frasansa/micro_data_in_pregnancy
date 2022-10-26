@@ -36,7 +36,7 @@ mutate(across(diag1_cod:proc10_cod,
                               collapse = "|")), .x, NA_character_)))
     
 
-mbds_new_cases_clean
+mbds_new_cases_clean %>% count(grd_inicio, sort = TRUE)
 
 fwrite(mbds_new_cases_clean, file.path("results", "otros_ingresos_preg.csv"))
 
