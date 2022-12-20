@@ -19,7 +19,8 @@ source(file.path("..", "scripts", "Funciones.R"))
 # load data--------------------------------------------------------------------
 # cmbd filtrado por GRD
 cmbd_grd_navarra <- read_excel(file.path("data", "cmbd_navarra",
-                                         "CMBD_embarazadas_GRD.xlsx"),
+                                         "CMBD_embarazadas.xlsx"),
+                               sheet = ">2015 Filtro_GRD",
                                col_types = c("numeric", 
                                              "date", 
                                              "date",
@@ -36,7 +37,7 @@ cmbd_grd_navarra_2016 <- cmbd_grd_navarra %>%
          fecha_inicio_contacto <= ymd(20161231))
 
 # Todo el cmbd de 2016
-cmbd_navarra_2016 <- read_excel(file.path("data", "cmbd_navarra",
+cmbd_navarra_2016_0 <- read_excel(file.path("data", "cmbd_navarra",
                                           "CMBD_embarazadas.xlsx"),
                                 sheet = "Mujeres fértiles 2016",
                                 col_types = c("numeric", 
@@ -49,6 +50,7 @@ cmbd_navarra_2016 <- read_excel(file.path("data", "cmbd_navarra",
   mutate(fecha_inicio_contacto = ymd(str_sub(fecha_inicio_contacto, 1, 10)),
          fecha_fin_contacto = ymd(str_sub(fecha_fin_contacto, 1, 10))
          )
+
 # listas de códigos
 lista_codigos  <- readRDS(file.path("Data", "preg_codes", "lista_codigos.RDS"))
 lista_codigos_all <- readRDS(file.path("Data", "preg_codes", "lista_codigos_all.RDS"))
@@ -56,6 +58,20 @@ lista_codigos_and_procedures_all <- readRDS(file.path("Data", "preg_codes", "lis
 
 ```
 
+
+```{r}
+# check codes
+lista_codigos_and_procedures_all |> 
+  enframe() |> 
+  unnest(value) |> 
+  filter(value == "^Z3A.4")
+
+lista_codigos_and_procedures_all |> 
+  enframe() |> 
+  unnest(value) |> 
+  filter(str_starts(value, "\\^O01") == TRUE)
+
+```
 
 # Descriptivo GRD 2016
 
@@ -67,6 +83,30 @@ cmbd_grd_navarra_2016 %>% count(grd_inicio, grd_fin)
 # 6229
 
 ```
+
+# Comprobar códigos de paciente
+
+```{r}
+# guardar códigos de paciente
+pacientes_cmbd_grd_navarra_2016 <- cmbd_grd_navarra_2016 |> 
+  distinct(paciente_codigo) |> 
+  pull(paciente_codigo)
+
+pacientes_cmbd_navarra_2016 <- cmbd_navarra_2016 |> 
+  distinct(paciente_codigo) |> 
+  pull(paciente_codigo)
+
+```
+
+# Unir en cmbd 2016 los filtrados por GRD
+
+```{r}
+# unidos
+cmbd_navarra_2016 <- cmbd_navarra_2016_0 |> 
+  union(cmbd_grd_navarra_2016)
+
+```
+
 
 # Introducir categorías en el cmbd
 
@@ -104,8 +144,10 @@ mbds_categorias_all_preg <- mbds_categorias_all %>% filter(all == 1)
 mbds_categorias_all_preg %>% anti_join(cmbd_grd_navarra_2016, 
                           by = c("paciente_codigo", "fecha_inicio_contacto")) 
 
+# comprobar casos de menos-----------------------------------------------------
 cmbd_grd_navarra_2016 %>% anti_join(mbds_categorias_all_preg, 
-                          by = c("paciente_codigo", "fecha_inicio_contacto"))
+                          by = c("paciente_codigo", "fecha_inicio_contacto")) 
+
 
 ```
 
