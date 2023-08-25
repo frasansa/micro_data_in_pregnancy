@@ -37,6 +37,8 @@ library(glue)
 library(tictoc)
 library(data.table)
 
+# install.packages("INEbaseR")
+
 ```
 
 # Descargar datos
